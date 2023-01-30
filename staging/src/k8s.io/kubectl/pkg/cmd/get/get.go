@@ -98,6 +98,8 @@ var (
 		of the --template flag, you can filter the attributes of the fetched resources.`))
 
 	getExample = templates.Examples(i18n.T(`
+		# ideyedi's 쿠버네티스 컨트롤
+		
 		# List all pods in ps output format
 		kubectl get pods
 
