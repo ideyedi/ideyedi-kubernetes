@@ -1,5 +1,8 @@
 # ideyedi's
-kubectl
+# ekbctl compile command
+# cd cmd/kubectl
+# go build -o ekbctl
+ekbctl
 
 # OSX leaves these everywhere on SMB shares
 ._*
