@@ -24,6 +24,7 @@ import (
 	"fmt"
 	"io/ioutil"
 	"os"
+	"os/exec"
 	"reflect"
 	"strings"
 	"sync"
@@ -607,6 +608,47 @@ func TestDetectSafeNotMountedBehavior(t *testing.T) {
 	}
 }
 
+func TestCheckUmountError(t *testing.T) {
+	target := "/test/path"
+	withSafeNotMountedBehavior := true
+	command := exec.Command("uname", "-r") // dummy command return status 0
+
+	if err := command.Run(); err != nil {
+		t.Errorf("Faild to exec dummy command. err: %s", err)
+	}
+
+	testcases := []struct {
+		output   []byte
+		err      error
+		expected bool
+	}{
+		{
+			err:      errors.New("wait: no child processes"),
+			expected: true,
+		},
+		{
+			output:   []byte("umount: /test/path: not mounted."),
+			err:      errors.New("exit status 1"),
+			expected: true,
+		},
+		{
+			output:   []byte("umount: /test/path: No such file or directory"),
+			err:      errors.New("exit status 1"),
+			expected: false,
+		},
+	}
+
+	for _, v := range testcases {
+		if err := checkUmountError(target, command, v.output, v.err, withSafeNotMountedBehavior); (err == nil) != v.expected {
+			if v.expected {
+				t.Errorf("Expected to return nil, but did not. err: %s", err)
+			} else {
+				t.Errorf("Expected to return error, but did not.")
+			}
+		}
+	}
+}
+
 func TestFormat(t *testing.T) {
 	const (
 		formatCount    = 5
@@ -703,30 +745,5 @@ func makeFakeCommandAction(stdout string, err error, cmdFn func()) testexec.Fake
 	}
 	return func(cmd string, args ...string) utilexec.Cmd {
 		return testexec.InitFakeCmd(&c, cmd, args...)
-	}
-}
-
-func TestNotMountedBehaviorOfUnmount(t *testing.T) {
-	target, err := ioutil.TempDir("", "kubelet-umount")
-	if err != nil {
-		t.Errorf("Cannot create temp dir: %v", err)
-	}
-
-	defer os.RemoveAll(target)
-
-	m := Mounter{withSafeNotMountedBehavior: true}
-	if err = m.Unmount(target); err != nil {
-		t.Errorf(`Expect complete Unmount(), but it dose not: %v`, err)
-	}
-
-	if err = tryUnmount(target, m.withSafeNotMountedBehavior, time.Minute); err != nil {
-		t.Errorf(`Expect complete tryUnmount(), but it does not: %v`, err)
-	}
-
-	// forceUmount exec "umount -f", so skip this case if user is not root.
-	if os.Getuid() == 0 {
-		if err = forceUmount(target, m.withSafeNotMountedBehavior); err != nil {
-			t.Errorf(`Expect complete forceUnmount(), but it does not: %v`, err)
-		}
 	}
 }

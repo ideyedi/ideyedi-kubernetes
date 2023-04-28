@@ -26,6 +26,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/google/go-cmp/cmp"
 	"github.com/lithammer/dedent"
 	"github.com/pkg/errors"
 
@@ -36,7 +37,9 @@ import (
 	fakeexec "k8s.io/utils/exec/testing"
 
 	kubeadmapi "k8s.io/kubernetes/cmd/kubeadm/app/apis/kubeadm"
+	kubeadmapiv1 "k8s.io/kubernetes/cmd/kubeadm/app/apis/kubeadm/v1beta3"
 	"k8s.io/kubernetes/cmd/kubeadm/app/constants"
+	configutil "k8s.io/kubernetes/cmd/kubeadm/app/util/config"
 	utilruntime "k8s.io/kubernetes/cmd/kubeadm/app/util/runtime"
 )
 
@@ -640,9 +643,7 @@ func TestHTTPProxyCIDRCheck(t *testing.T) {
 		},
 	}
 
-	// Save current content of *_proxy and *_PROXY variables.
-	savedEnv := resetProxyEnv(t)
-	defer restoreEnv(savedEnv)
+	resetProxyEnv(t)
 
 	for _, rt := range tests {
 		warning, _ := rt.check.Check()
@@ -722,9 +723,7 @@ func TestHTTPProxyCheck(t *testing.T) {
 		},
 	}
 
-	// Save current content of *_proxy and *_PROXY variables.
-	savedEnv := resetProxyEnv(t)
-	defer restoreEnv(savedEnv)
+	resetProxyEnv(t)
 
 	for _, rt := range tests {
 		warning, _ := rt.check.Check()
@@ -741,23 +740,19 @@ func TestHTTPProxyCheck(t *testing.T) {
 	}
 }
 
-// resetProxyEnv is helper function that unsets all *_proxy variables
-// and return previously set values as map. This can be used to restore
-// original state of the environment.
-func resetProxyEnv(t *testing.T) map[string]string {
-	savedEnv := make(map[string]string)
+// resetProxyEnv is helper function that unsets all *_proxy variables.
+func resetProxyEnv(t *testing.T) {
 	for _, e := range os.Environ() {
-		pair := strings.Split(e, "=")
-		if strings.HasSuffix(strings.ToLower(pair[0]), "_proxy") {
-			savedEnv[pair[0]] = pair[1]
-			os.Unsetenv(pair[0])
+		key, value, _ := strings.Cut(e, "=")
+		if strings.HasSuffix(strings.ToLower(key), "_proxy") {
+			t.Cleanup(func() { os.Setenv(key, value) })
+			os.Unsetenv(key)
 		}
 	}
-	t.Log("Saved environment: ", savedEnv)
 
-	os.Setenv("HTTP_PROXY", "http://proxy.example.com:3128")
-	os.Setenv("HTTPS_PROXY", "https://proxy.example.com:3128")
-	os.Setenv("NO_PROXY", "example.com,10.0.0.0/8,2001:db8::/48")
+	t.Setenv("HTTP_PROXY", "http://proxy.example.com:3128")
+	t.Setenv("HTTPS_PROXY", "https://proxy.example.com:3128")
+	t.Setenv("NO_PROXY", "example.com,10.0.0.0/8,2001:db8::/48")
 	// Check if we can reliably execute tests:
 	// ProxyFromEnvironment caches the *_proxy environment variables and
 	// if ProxyFromEnvironment already executed before our test with empty
@@ -774,15 +769,6 @@ func resetProxyEnv(t *testing.T) map[string]string {
 		t.Skip("test skipped as ProxyFromEnvironment already initialized in environment without defined HTTP proxy")
 	}
 	t.Log("http.ProxyFromEnvironment is usable, continue executing test")
-	return savedEnv
-}
-
-// restoreEnv is helper function to restores values
-// of environment variables from saved state in the map
-func restoreEnv(e map[string]string) {
-	for k, v := range e {
-		os.Setenv(k, v)
-	}
 }
 
 func TestKubeletVersionCheck(t *testing.T) {
@@ -1001,6 +987,137 @@ func TestMemCheck(t *testing.T) {
 				t.Errorf("expected 0 warnings but got %d: %q", len(warnings), warnings)
 			} else if len(errors) != rt.expectedErrors {
 				t.Errorf("expected %d error(s) but got %d: %q", rt.expectedErrors, len(errors), errors)
+			}
+		})
+	}
+}
+
+func TestInitIPCheck(t *testing.T) {
+	// skip this test, if OS in not Linux, since it will ONLY pass on Linux.
+	if runtime.GOOS != "linux" {
+		t.Skip("unsupported OS")
+	}
+	// should be a privileged user for the `init` command, otherwise just skip it.
+	isPrivileged := IsPrivilegedUserCheck{}
+	if _, err := isPrivileged.Check(); err != nil {
+		t.Skip("not a privileged user")
+	}
+	internalcfg, err := configutil.DefaultedStaticInitConfiguration()
+	if err != nil {
+		t.Fatalf("unexpected failure when defaulting InitConfiguration: %v", err)
+	}
+	internalcfg.LocalAPIEndpoint.AdvertiseAddress = "" // AdvertiseAddress is optional, it could be auto-detected.
+	ipv4File := "FileContent--proc-sys-net-ipv4-ip_forward"
+	ipv6File := "FileContent--proc-sys-net-ipv6-conf-default-forwarding"
+	var tests = []struct {
+		testName    string
+		PodSubnet   string
+		serviceCidr string
+		expStr      []string
+	}{
+		{
+			testName:    "dual stack",
+			PodSubnet:   "fda9:d324:354d:0::/56",
+			serviceCidr: "10.96.0.0/16,fda9:d324:354d:1::/112",
+			expStr:      []string{"FileContent--proc-sys-net-ipv4-ip_forward", "FileContent--proc-sys-net-ipv6-conf-default-forwarding"},
+		},
+		{
+			testName:    "single stack ipv4",
+			PodSubnet:   "10.244.0.0/16",
+			serviceCidr: "10.96.0.0/16",
+			expStr:      []string{"FileContent--proc-sys-net-ipv4-ip_forward"},
+		},
+		{
+			testName:    "single stack ipv6",
+			PodSubnet:   "fda9:d324:354d:0::/56",
+			serviceCidr: "fda9:d324:354d:1::/112",
+			expStr:      []string{"FileContent--proc-sys-net-ipv6-conf-default-forwarding"},
+		},
+	}
+
+	for _, rt := range tests {
+		t.Run(rt.testName, func(t *testing.T) {
+			checkList := []string{}
+			internalcfg.Networking.ServiceSubnet = rt.serviceCidr
+			internalcfg.Networking.PodSubnet = rt.PodSubnet
+			checks, err := InitNodeChecks(exec.New(), internalcfg, nil, false, false)
+			if err != nil {
+				t.Fatalf("unexpected error: %v", err)
+			}
+			for _, check := range checks {
+				if check.Name() == ipv4File {
+					checkList = append(checkList, ipv4File)
+				}
+				if check.Name() == ipv6File {
+					checkList = append(checkList, ipv6File)
+				}
+			}
+			if diff := cmp.Diff(checkList, rt.expStr); diff != "" {
+				t.Fatalf("unexpected file content check (-want,+got):\n%s", diff)
+			}
+		})
+	}
+}
+
+func TestJoinIPCheck(t *testing.T) {
+	// skip this test, if OS in not Linux, since it will ONLY pass on Linux.
+	if runtime.GOOS != "linux" {
+		t.Skip("unsupported OS")
+	}
+	// should be a privileged user for the `join` command, otherwise just skip it.
+	isPrivileged := IsPrivilegedUserCheck{}
+	if _, err := isPrivileged.Check(); err != nil {
+		t.Skip("not a privileged user")
+	}
+	internalcfg, err := configutil.DefaultedJoinConfiguration(&kubeadmapiv1.JoinConfiguration{
+		Discovery: kubeadmapiv1.Discovery{
+			BootstrapToken: &kubeadmapiv1.BootstrapTokenDiscovery{
+				Token:                    configutil.PlaceholderToken.Token.String(),
+				APIServerEndpoint:        "kube-apiserver:6443",
+				UnsafeSkipCAVerification: true,
+			},
+		},
+	})
+	if err != nil {
+		t.Fatalf("unexpected failure when defaulting JoinConfiguration: %v", err)
+	}
+	ipv4File := "FileContent--proc-sys-net-ipv4-ip_forward"
+	ipv6File := "FileContent--proc-sys-net-ipv6-conf-default-forwarding"
+	var tests = []struct {
+		testName string
+		endpoint string
+		expStr   []string
+	}{
+		{
+			testName: "single stack ipv4",
+			endpoint: "10.244.0.0:1234",
+			expStr:   []string{"FileContent--proc-sys-net-ipv4-ip_forward"},
+		},
+		{
+			testName: "single stack ipv6",
+			endpoint: "[fda9:d324:354d:0::]:1234",
+			expStr:   []string{"FileContent--proc-sys-net-ipv6-conf-default-forwarding"},
+		},
+	}
+
+	for _, rt := range tests {
+		t.Run(rt.testName, func(t *testing.T) {
+			checkList := []string{}
+			internalcfg.Discovery.BootstrapToken.APIServerEndpoint = rt.endpoint
+			checks, err := JoinNodeChecks(exec.New(), internalcfg, nil)
+			if err != nil {
+				t.Fatalf("unexpected error: %v", err)
+			}
+			for _, check := range checks {
+				if check.Name() == ipv4File {
+					checkList = append(checkList, ipv4File)
+				}
+				if check.Name() == ipv6File {
+					checkList = append(checkList, ipv6File)
+				}
+			}
+			if diff := cmp.Diff(checkList, rt.expStr); diff != "" {
+				t.Fatalf("unexpected file content check (-want,+got):\n%s", diff)
 			}
 		})
 	}

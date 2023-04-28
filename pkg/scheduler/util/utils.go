@@ -59,7 +59,7 @@ func GetPodStartTime(pod *v1.Pod) *metav1.Time {
 func GetEarliestPodStartTime(victims *extenderv1.Victims) *metav1.Time {
 	if len(victims.Pods) == 0 {
 		// should not reach here.
-		klog.ErrorS(fmt.Errorf("victims.Pods is empty. Should not reach here"), "")
+		klog.Background().Error(nil, "victims.Pods is empty. Should not reach here")
 		return nil
 	}
 
@@ -67,12 +67,12 @@ func GetEarliestPodStartTime(victims *extenderv1.Victims) *metav1.Time {
 	maxPriority := corev1helpers.PodPriority(victims.Pods[0])
 
 	for _, pod := range victims.Pods {
-		if corev1helpers.PodPriority(pod) == maxPriority {
-			if GetPodStartTime(pod).Before(earliestPodStartTime) {
-				earliestPodStartTime = GetPodStartTime(pod)
+		if podPriority := corev1helpers.PodPriority(pod); podPriority == maxPriority {
+			if podStartTime := GetPodStartTime(pod); podStartTime.Before(earliestPodStartTime) {
+				earliestPodStartTime = podStartTime
 			}
-		} else if corev1helpers.PodPriority(pod) > maxPriority {
-			maxPriority = corev1helpers.PodPriority(pod)
+		} else if podPriority > maxPriority {
+			maxPriority = podPriority
 			earliestPodStartTime = GetPodStartTime(pod)
 		}
 	}

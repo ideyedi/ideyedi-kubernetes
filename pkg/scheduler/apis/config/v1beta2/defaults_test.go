@@ -326,6 +326,11 @@ func TestSchedulerDefaults(t *testing.T) {
 					{
 						SchedulerName: pointer.String("custom-scheduler"),
 						Plugins: &v1beta2.Plugins{
+							PreEnqueue: v1beta2.PluginSet{
+								Enabled: []v1beta2.Plugin{
+									{Name: "SchedulingGates"},
+								},
+							},
 							QueueSort: v1beta2.PluginSet{
 								Enabled: []v1beta2.Plugin{
 									{Name: names.PrioritySort},
@@ -336,6 +341,10 @@ func TestSchedulerDefaults(t *testing.T) {
 									{Name: names.NodeResourcesFit},
 									{Name: names.NodePorts},
 									{Name: names.VolumeRestrictions},
+									{Name: names.EBSLimits},
+									{Name: names.GCEPDLimits},
+									{Name: names.NodeVolumeLimits},
+									{Name: names.AzureDiskLimits},
 									{Name: names.PodTopologySpread},
 									{Name: names.InterPodAffinity},
 									{Name: names.VolumeBinding},
@@ -373,6 +382,8 @@ func TestSchedulerDefaults(t *testing.T) {
 									{Name: names.PodTopologySpread},
 									{Name: names.TaintToleration},
 									{Name: names.NodeAffinity},
+									{Name: names.NodeResourcesFit},
+									{Name: names.NodeResourcesBalancedAllocation},
 								},
 							},
 							Score: v1beta2.PluginSet{

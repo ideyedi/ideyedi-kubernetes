@@ -24,6 +24,7 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/util/sets"
 	api "k8s.io/kubernetes/pkg/apis/core"
+	utilpointer "k8s.io/utils/pointer"
 )
 
 func BenchmarkNoWarnings(b *testing.B) {
@@ -400,12 +401,30 @@ func TestWarnings(t *testing.T) {
 			template: &api.PodTemplateSpec{
 				Spec: api.PodSpec{
 					TopologySpreadConstraints: []api.TopologySpreadConstraint{
-						{TopologyKey: `foo`},
-						{TopologyKey: `beta.kubernetes.io/arch`},
-						{TopologyKey: `beta.kubernetes.io/os`},
-						{TopologyKey: `failure-domain.beta.kubernetes.io/region`},
-						{TopologyKey: `failure-domain.beta.kubernetes.io/zone`},
-						{TopologyKey: `beta.kubernetes.io/instance-type`},
+						{
+							TopologyKey:   `foo`,
+							LabelSelector: &metav1.LabelSelector{},
+						},
+						{
+							TopologyKey:   `beta.kubernetes.io/arch`,
+							LabelSelector: &metav1.LabelSelector{},
+						},
+						{
+							TopologyKey:   `beta.kubernetes.io/os`,
+							LabelSelector: &metav1.LabelSelector{},
+						},
+						{
+							TopologyKey:   `failure-domain.beta.kubernetes.io/region`,
+							LabelSelector: &metav1.LabelSelector{},
+						},
+						{
+							TopologyKey:   `failure-domain.beta.kubernetes.io/zone`,
+							LabelSelector: &metav1.LabelSelector{},
+						},
+						{
+							TopologyKey:   `beta.kubernetes.io/instance-type`,
+							LabelSelector: &metav1.LabelSelector{},
+						},
 					},
 				},
 			},
@@ -487,6 +506,97 @@ func TestWarnings(t *testing.T) {
 			},
 			expected: []string{
 				`spec.volumes[0].ephemeral.volumeClaimTemplate.spec.resources.requests[storage]: fractional byte value "200m" is invalid, must be an integer`,
+			},
+		},
+		{
+			name: "terminationGracePeriodSeconds is negative",
+			template: &api.PodTemplateSpec{
+				ObjectMeta: metav1.ObjectMeta{},
+				Spec: api.PodSpec{
+					TerminationGracePeriodSeconds: utilpointer.Int64Ptr(-1),
+				},
+			},
+			expected: []string{
+				`spec.terminationGracePeriodSeconds: must be >= 0; negative values are invalid and will be treated as 1`,
+			},
+		},
+		{
+			name: "null LabelSelector in topologySpreadConstraints",
+			template: &api.PodTemplateSpec{
+				ObjectMeta: metav1.ObjectMeta{},
+				Spec: api.PodSpec{
+					TopologySpreadConstraints: []api.TopologySpreadConstraint{
+						{
+							LabelSelector: &metav1.LabelSelector{},
+						},
+						{
+							LabelSelector: nil,
+						},
+					},
+				},
+			},
+			expected: []string{
+				`spec.topologySpreadConstraints[1].labelSelector: a null labelSelector results in matching no pod`,
+			},
+		},
+		{
+			name: "null LabelSelector in PodAffinity",
+			template: &api.PodTemplateSpec{
+				ObjectMeta: metav1.ObjectMeta{},
+				Spec: api.PodSpec{
+					Affinity: &api.Affinity{
+						PodAffinity: &api.PodAffinity{
+							RequiredDuringSchedulingIgnoredDuringExecution: []api.PodAffinityTerm{
+								{
+									LabelSelector: &metav1.LabelSelector{},
+								},
+								{
+									LabelSelector: nil,
+								},
+							},
+							PreferredDuringSchedulingIgnoredDuringExecution: []api.WeightedPodAffinityTerm{
+								{
+									PodAffinityTerm: api.PodAffinityTerm{
+										LabelSelector: &metav1.LabelSelector{},
+									},
+								},
+								{
+									PodAffinityTerm: api.PodAffinityTerm{
+										LabelSelector: nil,
+									},
+								},
+							},
+						},
+						PodAntiAffinity: &api.PodAntiAffinity{
+							RequiredDuringSchedulingIgnoredDuringExecution: []api.PodAffinityTerm{
+								{
+									LabelSelector: &metav1.LabelSelector{},
+								},
+								{
+									LabelSelector: nil,
+								},
+							},
+							PreferredDuringSchedulingIgnoredDuringExecution: []api.WeightedPodAffinityTerm{
+								{
+									PodAffinityTerm: api.PodAffinityTerm{
+										LabelSelector: &metav1.LabelSelector{},
+									},
+								},
+								{
+									PodAffinityTerm: api.PodAffinityTerm{
+										LabelSelector: nil,
+									},
+								},
+							},
+						},
+					},
+				},
+			},
+			expected: []string{
+				`spec.affinity.podAffinity.requiredDuringSchedulingIgnoredDuringExecution[1].labelSelector: a null labelSelector results in matching no pod`,
+				`spec.affinity.podAffinity.preferredDuringSchedulingIgnoredDuringExecution[1].podAffinityTerm.labelSelector: a null labelSelector results in matching no pod`,
+				`spec.affinity.podAntiAffinity.requiredDuringSchedulingIgnoredDuringExecution[1].labelSelector: a null labelSelector results in matching no pod`,
+				`spec.affinity.podAntiAffinity.preferredDuringSchedulingIgnoredDuringExecution[1].podAffinityTerm.labelSelector: a null labelSelector results in matching no pod`,
 			},
 		},
 	}

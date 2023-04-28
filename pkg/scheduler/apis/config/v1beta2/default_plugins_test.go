@@ -37,6 +37,9 @@ func TestApplyFeatureGates(t *testing.T) {
 	}{
 		{
 			name: "Feature gates disabled",
+			features: map[featuregate.Feature]bool{
+				features.PodSchedulingReadiness: false,
+			},
 			wantConfig: &v1beta2.Plugins{
 				QueueSort: v1beta2.PluginSet{
 					Enabled: []v1beta2.Plugin{
@@ -48,6 +51,10 @@ func TestApplyFeatureGates(t *testing.T) {
 						{Name: names.NodeResourcesFit},
 						{Name: names.NodePorts},
 						{Name: names.VolumeRestrictions},
+						{Name: names.EBSLimits},
+						{Name: names.GCEPDLimits},
+						{Name: names.NodeVolumeLimits},
+						{Name: names.AzureDiskLimits},
 						{Name: names.PodTopologySpread},
 						{Name: names.InterPodAffinity},
 						{Name: names.VolumeBinding},
@@ -85,6 +92,8 @@ func TestApplyFeatureGates(t *testing.T) {
 						{Name: names.PodTopologySpread},
 						{Name: names.TaintToleration},
 						{Name: names.NodeAffinity},
+						{Name: names.NodeResourcesFit},
+						{Name: names.NodeResourcesBalancedAllocation},
 					},
 				},
 				Score: v1beta2.PluginSet{
@@ -136,6 +145,10 @@ func TestApplyFeatureGates(t *testing.T) {
 						{Name: names.NodeResourcesFit},
 						{Name: names.NodePorts},
 						{Name: names.VolumeRestrictions},
+						{Name: names.EBSLimits},
+						{Name: names.GCEPDLimits},
+						{Name: names.NodeVolumeLimits},
+						{Name: names.AzureDiskLimits},
 						{Name: names.PodTopologySpread},
 						{Name: names.InterPodAffinity},
 						{Name: names.VolumeBinding},
@@ -173,6 +186,8 @@ func TestApplyFeatureGates(t *testing.T) {
 						{Name: names.PodTopologySpread},
 						{Name: names.TaintToleration},
 						{Name: names.NodeAffinity},
+						{Name: names.NodeResourcesFit},
+						{Name: names.NodeResourcesBalancedAllocation},
 					},
 				},
 				Score: v1beta2.PluginSet{
